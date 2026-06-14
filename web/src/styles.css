@@ -103,6 +103,9 @@ textarea { resize: vertical; min-height: 120px; font-family: ui-monospace, "Casc
 
 .browser { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
 .browser .path { padding: .5rem .65rem; border-bottom: 1px solid var(--border); display: flex; gap: .5rem; }
+.browser .filterbar { display: flex; gap: .5rem; align-items: center; padding: .5rem .65rem; border-bottom: 1px solid var(--border); }
+.browser .filterbar input { flex: 1; }
+.browser .filterbar .count { margin-left: auto; font-size: .75rem; white-space: nowrap; }
 .browser .list { max-height: 280px; overflow: auto; }
 .browser .item { display: flex; align-items: center; gap: .5rem; padding: .4rem .65rem; cursor: pointer; font-size: .85rem; border-bottom: 1px solid rgba(42,49,60,.4); }
 .browser .item:hover { background: var(--panel); }
