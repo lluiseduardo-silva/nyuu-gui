@@ -1,0 +1,20 @@
+[Unit]
+Description=Nyuu GUI — backups Usenet
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/nyuu-gui
+Environment=PORT=8787
+Environment=DATA_DIR=/var/lib/nyuu-gui
+Environment=MOCK=0
+# Garanta que nyuu/par2/mediainfo estejam no PATH (ajuste conforme sua instalação):
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/node server/src/index.js
+Restart=on-failure
+RestartSec=3
+User=nyuu
+
+[Install]
+WantedBy=multi-user.target

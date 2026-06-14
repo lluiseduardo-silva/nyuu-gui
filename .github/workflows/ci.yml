@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22.12.0'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Instalar dependências
+        run: |
+          npm --prefix server ci
+          npm --prefix web ci
+
+      - name: Build do frontend
+        run: npm run build
+
+      - name: Checagem de sintaxe (server)
+        run: |
+          for f in $(find server/src -name '*.js'); do node --check "$f"; done
+
+      - name: Smoke test de boot (mock)
+        run: |
+          MOCK=1 PORT=8787 node server/src/index.js &
+          SVPID=$!
+          for i in $(seq 1 20); do
+            curl -fsS http://localhost:8787/api/system >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://localhost:8787/api/system
+          curl -fsS http://localhost:8787/api/providers
+          kill $SVPID

@@ -1,0 +1,12 @@
+**/node_modules
+node_modules
+dist
+web/dist
+data
+server/data
+release
+.git
+.github
+.gitignore
+*.log
+npm-debug.log*
