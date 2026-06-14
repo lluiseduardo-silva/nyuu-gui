@@ -115,6 +115,23 @@ Edite o `docker-compose.yml` para **montar sua biblioteca de mídia** dentro do 
 caminhos que você escolhe na UI são os caminhos _de dentro_ do container. O estado (banco,
 `nyuu.json`, logs, NZBs) fica no volume `nyuu-data`.
 
+## Instalação/atualização rápida (script)
+
+Para Linux, há scripts que baixam o archive da última release, instalam em `/opt/nyuu-gui`,
+tentam instalar `par2`/`mediainfo` via apt e criam/ativam o serviço systemd:
+
+```bash
+# instalar (ou reinstalar)
+curl -fsSL https://raw.githubusercontent.com/lluiseduardo-silva/nyuu-gui/main/scripts/install.sh | sudo bash
+
+# atualizar para a última release (preserva DATA_DIR)
+curl -fsSL https://raw.githubusercontent.com/lluiseduardo-silva/nyuu-gui/main/scripts/update.sh | sudo bash
+```
+
+Variáveis opcionais: `VERSION=vX.Y.Z`, `PORT=8787`, `DATA_DIR=/var/lib/nyuu-gui`,
+`PREFIX=/opt/nyuu-gui`, `SERVICE_USER=root`. O `nyuu` ainda precisa estar no PATH
+(`npm i -g nyuu`) — ou use a imagem Docker, que já o inclui.
+
 ## Telas
 
 A configuração é dividida por assunto (sem uma tela única gigante):

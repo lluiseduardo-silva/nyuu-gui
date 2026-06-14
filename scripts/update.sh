@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+#
+# Atualizador do Nyuu GUI. Verifica a última release; se for mais nova que a
+# instalada, baixa, substitui o app em PREFIX (preservando DATA_DIR) e reinicia.
+# Mantém a unit do systemd existente (não a recria).
+#
+# Uso (como root):
+#   curl -fsSL https://raw.githubusercontent.com/lluiseduardo-silva/nyuu-gui/main/scripts/update.sh | sudo bash
+#
+# Variáveis (opcionais):
+#   VERSION=v0.2.0        # força uma versão específica (default: última)
+#   PREFIX=/opt/nyuu-gui
+set -euo pipefail
+
+REPO="${REPO:-lluiseduardo-silva/nyuu-gui}"
+PREFIX="${PREFIX:-/opt/nyuu-gui}"
+VERSION="${VERSION:-latest}"
+
+[ "$(id -u)" -eq 0 ] || { echo "Rode como root (use sudo)." >&2; exit 1; }
+[ -d "$PREFIX" ] || { echo "Instalação não encontrada em $PREFIX. Rode o install.sh primeiro." >&2; exit 1; }
+
+case "$(uname -m)" in
+  x86_64|amd64)  ARCH=linux-x64 ;;
+  aarch64|arm64) ARCH=linux-arm64 ;;
+  *) echo "Arquitetura não suportada: $(uname -m)" >&2; exit 1 ;;
+esac
+
+if [ "$VERSION" = "latest" ]; then
+  TAG="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep -oP '"tag_name":\s*"\K[^"]+' || true)"
+else
+  TAG="$VERSION"
+fi
+[ -n "${TAG:-}" ] || { echo "Não consegui resolver a versão." >&2; exit 1; }
+
+CURRENT="$(cat "$PREFIX/.version" 2>/dev/null || echo 'desconhecida')"
+if [ "$TAG" = "$CURRENT" ]; then
+  echo ">> Já está na versão mais recente ($TAG). Nada a fazer."
+  exit 0
+fi
+echo ">> Atualizando: $CURRENT -> $TAG"
+
+VER="${TAG#v}"
+ASSET="nyuu-gui-${VER}-${ARCH}.tar.xz"
+URL="https://github.com/$REPO/releases/download/${TAG}/${ASSET}"
+
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+echo ">> Baixando $URL"
+curl -fL -o "$TMP/app.tar.xz" "$URL"
+tar -xJf "$TMP/app.tar.xz" -C "$TMP"
+
+# Descobre o usuário do serviço para preservar o ownership.
+OWNER="$(grep -oP '^User=\K.*' /etc/systemd/system/nyuu-gui.service 2>/dev/null || echo root)"
+
+systemctl stop nyuu-gui 2>/dev/null || true
+rm -rf "$PREFIX"
+mv "$TMP/nyuu-gui" "$PREFIX"
+echo "$TAG" > "$PREFIX/.version"
+chown -R "$OWNER":"$OWNER" "$PREFIX" 2>/dev/null || true
+systemctl start nyuu-gui
+
+echo ">> Atualizado para $TAG."
+systemctl --no-pager status nyuu-gui | head -n 4 || true

@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
 
-// Navegador de arquivos do servidor para escolher a origem do backup.
-export default function FileBrowser({ value, onChange, startPath }) {
+// Navegador de arquivos do servidor. Cada "adicionar" chama onPick(path, type)
+// sem perder a posição de navegação — dá pra acumular várias origens.
+export default function FileBrowser({ onPick, startPath }) {
   const [cur, setCur] = useState(null)
   const [err, setErr] = useState('')
   const [typed, setTyped] = useState(startPath || '')
@@ -30,21 +31,20 @@ export default function FileBrowser({ value, onChange, startPath }) {
         <div className="browser">
           <div className="path">
             <button type="button" className="btn" disabled={!cur.parent} onClick={() => load(cur.parent)}>⬆ acima</button>
-            <button type="button" className="btn primary" onClick={() => onChange(cur.path)}>selecionar esta pasta</button>
+            <button type="button" className="btn primary" onClick={() => onPick(cur.path, 'dir')}>+ adicionar esta pasta</button>
           </div>
           <div className="list">
             {cur.entries.map((e) => (
-              <div key={e.path} className="item" onClick={() => (e.type === 'dir' ? load(e.path) : onChange(e.path))}>
+              <div key={e.path} className="item" onClick={() => (e.type === 'dir' ? load(e.path) : onPick(e.path, 'file'))}>
                 <span className="ic">{e.type === 'dir' ? '📁' : '📄'}</span>
                 <span>{e.name}</span>
-                <button type="button" className="btn pick" onClick={(ev) => { ev.stopPropagation(); onChange(e.path) }}>selecionar</button>
+                <button type="button" className="btn pick" onClick={(ev) => { ev.stopPropagation(); onPick(e.path, e.type) }}>+ adicionar</button>
               </div>
             ))}
             {cur.entries.length === 0 && <div className="empty">pasta vazia</div>}
           </div>
         </div>
       )}
-      {value && <div className="success" style={{ marginTop: '.5rem' }}>Selecionado: {value}</div>}
     </div>
   )
 }

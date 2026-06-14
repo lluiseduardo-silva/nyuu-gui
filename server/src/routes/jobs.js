@@ -16,6 +16,16 @@ function deriveName(source) {
   }
 }
 
+function normalizeOptions(o = {}) {
+  return {
+    makeNfo: o.makeNfo !== false,
+    redundancy: o.redundancy,
+    volumes: o.volumes,
+    subdirs: o.subdirs,
+    index: o.index !== false,
+  }
+}
+
 export function registerJobs(app) {
   app.get('/api/jobs', async () => ({ jobs: listJobs() }))
 
@@ -42,16 +52,31 @@ export function registerJobs(app) {
       source_path: source,
       name,
       category_id: body.category_id || null,
-      options: {
-        makeNfo: body.options?.makeNfo !== false,
-        redundancy: body.options?.redundancy,
-        volumes: body.options?.volumes,
-        subdirs: body.options?.subdirs,
-        index: body.options?.index !== false,
-      },
+      options: normalizeOptions(body.options),
     })
     kick()
     return reply.code(201).send({ job })
+  })
+
+  // Cria vários jobs de uma vez (mesma categoria/opções; nome auto-derivado por item).
+  app.post('/api/jobs/batch', async (req, reply) => {
+    const body = req.body || {}
+    const items = Array.isArray(body.items) ? body.items : []
+    if (!items.length) return reply.code(400).send({ error: 'nenhuma origem informada' })
+
+    const options = normalizeOptions(body.options)
+    const category_id = body.category_id || null
+    const created = []
+    const errors = []
+    for (const it of items) {
+      const source = String(it?.source_path || '').trim()
+      if (!source) { errors.push({ source: it?.source_path ?? '', error: 'caminho vazio' }); continue }
+      if (!fs.existsSync(source)) { errors.push({ source, error: 'caminho não existe' }); continue }
+      const name = (it.name || '').trim() || deriveName(source)
+      created.push(createJob({ source_path: source, name, category_id, options }))
+    }
+    if (created.length) kick()
+    return reply.code(201).send({ created, errors })
   })
 
   app.post('/api/jobs/:id/retry', async (req, reply) => {

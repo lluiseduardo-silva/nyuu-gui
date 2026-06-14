@@ -15,6 +15,7 @@ export const api = {
   job: (id) => req('GET', `/api/jobs/${id}`),
   jobLog: (id) => req('GET', `/api/jobs/${id}/log`),
   createJob: (job) => req('POST', '/api/jobs', job),
+  createJobsBatch: (payload) => req('POST', '/api/jobs/batch', payload),
   retryJob: (id) => req('POST', `/api/jobs/${id}/retry`),
   pauseJob: (id) => req('POST', `/api/jobs/${id}/pause`),
   resumeJob: (id) => req('POST', `/api/jobs/${id}/resume`),

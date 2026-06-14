@@ -2,10 +2,13 @@ import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import FileBrowser from '../components/FileBrowser.jsx'
 
+const baseName = (p) => p.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || ''
+const previewName = (it) => (it.type === 'dir' ? baseName(it.path) : baseName(it.path).replace(/\.[^.]+$/, ''))
+
 export default function AddJobPage({ system, onCreated }) {
   const [settings, setSettings] = useState(null)
-  const [source, setSource] = useState('')
-  const [name, setName] = useState('')
+  const [sources, setSources] = useState([]) // [{ path, type }]
+  const [singleName, setSingleName] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [makeNfo, setMakeNfo] = useState(true)
   const [doIndex, setDoIndex] = useState(true)
@@ -22,20 +25,26 @@ export default function AddJobPage({ system, onCreated }) {
   const cats = indexer?.configs?.[provId]?.categories || []
   const indexerOn = !!indexer?.enabled
 
-  const pick = (p) => {
-    setSource(p)
-    const base = p.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || ''
-    setName(base.replace(/\.[^.]+$/, ''))
-  }
+  const addSource = (path, type) =>
+    setSources((prev) => (prev.some((s) => s.path === path) ? prev : [...prev, { path, type }]))
+  const removeSource = (i) => setSources((prev) => prev.filter((_, j) => j !== i))
+
+  // Ao ficar com exatamente 1 origem, pré-preenche o nome editável.
+  useEffect(() => {
+    if (sources.length === 1) setSingleName(previewName(sources[0]))
+  }, [sources])
 
   const submit = async () => {
     setErr('')
-    if (!source) { setErr('escolha uma origem'); return }
+    if (!sources.length) { setErr('adicione ao menos uma origem'); return }
     setBusy(true)
     try {
-      await api.createJob({
-        source_path: source,
-        name: name.trim() || undefined,
+      const items = sources.map((s) => ({
+        source_path: s.path,
+        name: sources.length === 1 ? (singleName.trim() || undefined) : undefined,
+      }))
+      const res = await api.createJobsBatch({
+        items,
         category_id: doIndex && indexerOn ? (categoryId || null) : null,
         options: {
           makeNfo,
@@ -45,7 +54,11 @@ export default function AddJobPage({ system, onCreated }) {
           subdirs: subdirs || undefined,
         },
       })
-      onCreated()
+      if (res.errors?.length) {
+        alert('Alguns itens não foram enfileirados:\n' + res.errors.map((e) => `• ${e.source}: ${e.error}`).join('\n'))
+      }
+      if (res.created?.length) onCreated()
+      else setErr('nenhum job foi criado')
     } catch (e) {
       setErr(e.message)
     } finally {
@@ -57,15 +70,34 @@ export default function AddJobPage({ system, onCreated }) {
     <div className="card">
       <h2>Novo backup</h2>
       <label className="field">
-        <span>Origem (pasta ou arquivo)</span>
-        <FileBrowser value={source} onChange={pick} startPath={system?.homedir} />
+        <span>Origens — clique em <b>+ adicionar</b> para empilhar quantas quiser</span>
+        <FileBrowser onPick={addSource} startPath={system?.homedir} />
       </label>
 
+      {sources.length > 0 && (
+        <div className="card" style={{ background: 'var(--panel-2)', marginTop: '.25rem' }}>
+          <b>{sources.length} origem(ns) selecionada(s)</b>
+          <div style={{ marginTop: '.5rem' }}>
+            {sources.map((s, i) => (
+              <div className="cat-row" key={s.path} style={{ alignItems: 'center' }}>
+                <span className="ic">{s.type === 'dir' ? '📁' : '📄'}</span>
+                <span style={{ flex: 1, fontSize: '.85rem', wordBreak: 'break-all' }}>
+                  <b>{previewName(s)}</b> <span className="muted">— {s.path}</span>
+                </span>
+                <button type="button" className="btn danger" onClick={() => removeSource(i)}>×</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid2">
-        <label className="field">
-          <span>Nome do release</span>
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="auto a partir da origem" />
-        </label>
+        {sources.length === 1 && (
+          <label className="field">
+            <span>Nome do release</span>
+            <input type="text" value={singleName} onChange={(e) => setSingleName(e.target.value)} placeholder="auto a partir da origem" />
+          </label>
+        )}
         <label className="field">
           <span>Categoria {provId ? `(${provId})` : ''}</span>
           <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} disabled={!doIndex || !indexerOn}>
@@ -104,7 +136,9 @@ export default function AddJobPage({ system, onCreated }) {
       </label>
 
       {err && <div className="error">{err}</div>}
-      <button className="btn primary" disabled={busy} onClick={submit}>{busy ? 'enfileirando...' : 'Adicionar à fila'}</button>
+      <button className="btn primary" disabled={busy || !sources.length} onClick={submit}>
+        {busy ? 'enfileirando...' : `Adicionar ${sources.length || ''} à fila`.trim()}
+      </button>
     </div>
   )
 }
