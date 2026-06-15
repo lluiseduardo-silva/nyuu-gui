@@ -39,10 +39,15 @@ export default function GeneralPage({ onSaved }) {
           <label className="field"><span>Pasta de saída (NZB/NFO)</span>
             <input type="text" value={s.paths.outDir} onChange={(e) => upd('paths.outDir', e.target.value)} placeholder="ex: /mnt/midias/nzbs (vazio = ./data/out)" />
           </label>
-          <label className="field"><span>Base do workdir par2 (opcional)</span>
-            <input type="text" value={s.paths.workDirBase} onChange={(e) => upd('paths.workDirBase', e.target.value)} placeholder="vazio = usa a pasta de saída" />
+          <label className="field"><span>Workdir do par2 — disco de scratch (opcional)</span>
+            <input type="text" value={s.paths.workDirBase} onChange={(e) => upd('paths.workDirBase', e.target.value)} placeholder="ex: /mnt/scratch  •  vazio = usa a pasta de saída" />
           </label>
         </div>
+        <p className="muted" style={{ marginTop: 0, fontSize: '.8rem' }}>
+          Os volumes de recuperação do <b>par2</b> são gravados aqui. Aponte para um disco
+          separado (ext4/xfs) para tirar essas micro-escritas do array principal — só o
+          <b> .nzb</b> e o <b>.nfo</b> vão para a pasta de saída.
+        </p>
         <div className="grid3">
           <label className="field"><span>Binário nyuu</span><input type="text" value={s.bin.nyuu} onChange={(e) => upd('bin.nyuu', e.target.value)} /></label>
           <label className="field"><span>Binário par2</span><input type="text" value={s.bin.par2} onChange={(e) => upd('bin.par2', e.target.value)} /></label>

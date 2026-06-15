@@ -36,6 +36,12 @@ export async function processJob(jobId, signal) {
   const workBase = settings.paths.workDirBase || outDir
   const workDir = path.join(workBase, `.par2_${base}`)
 
+  // Se um workdir foi informado mas não existe, falha cedo em vez de auto-criar:
+  // evita escrever na raiz caso o disco de scratch não esteja montado.
+  if (settings.paths.workDirBase && !fs.existsSync(settings.paths.workDirBase)) {
+    throw new Error(`workdir do par2 não existe — o disco de scratch está montado? (${settings.paths.workDirBase})`)
+  }
+
   const opts = job.options || {}
   const makeNfo = opts.makeNfo !== false
   const redundancy = opts.redundancy ?? settings.par2.redundancy
