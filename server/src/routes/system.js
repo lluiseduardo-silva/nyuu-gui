@@ -19,6 +19,10 @@ export function registerSystem(app) {
       isWindows: IS_WINDOWS,
       dataDir: DATA_DIR,
       homedir: os.homedir(),
+      mem: {
+        totalMB: Math.round(os.totalmem() / 1048576),
+        freeMB: Math.round(os.freemem() / 1048576),
+      },
       binaries,
     }
   })

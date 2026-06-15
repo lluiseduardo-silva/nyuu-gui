@@ -22,7 +22,7 @@ function defaults() {
       par2: 'par2',
       mediainfo: 'mediainfo',
     },
-    par2: { redundancy: 10, volumes: 7, keep: false },
+    par2: { redundancy: 10, volumes: 7, keep: false, memoryMB: 0 },
     post: { subdirs: 'keep' },
     indexer: {
       enabled: false,

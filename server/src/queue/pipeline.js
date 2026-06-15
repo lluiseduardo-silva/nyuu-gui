@@ -46,6 +46,7 @@ export async function processJob(jobId, signal) {
   const makeNfo = opts.makeNfo !== false
   const redundancy = opts.redundancy ?? settings.par2.redundancy
   const volumes = opts.volumes ?? settings.par2.volumes
+  const memoryMB = settings.par2.memoryMB || 0
   const subdirs = opts.subdirs || settings.post.subdirs
   const indexer = settings.indexer || {}
   const doIndex = opts.index !== false && indexer.enabled && !!job.category_id
@@ -81,7 +82,7 @@ export async function processJob(jobId, signal) {
   if (redundancy > 0) {
     setStage('par2')
     par2Files = await exec.generatePar2({
-      source, workDir, base, redundancy, volumes, bin: settings.bin.par2, onLine: makeOnLine('par2'), signal,
+      source, workDir, base, redundancy, volumes, memoryMB, bin: settings.bin.par2, onLine: makeOnLine('par2'), signal,
     })
   } else {
     log('[PAR2] desativado (redundância 0)')

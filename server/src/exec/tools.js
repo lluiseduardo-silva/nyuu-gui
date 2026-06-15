@@ -56,7 +56,7 @@ export async function generateNfo({ source, nfoPath, bin, onLine, signal }) {
 }
 
 // 2. par2 num workdir gravável (nunca dentro da fonte).
-export async function generatePar2({ source, workDir, base, redundancy, volumes, bin, onLine, signal }) {
+export async function generatePar2({ source, workDir, base, redundancy, volumes, memoryMB, bin, onLine, signal }) {
   fs.mkdirSync(workDir, { recursive: true })
   const isDir = fs.statSync(source).isDirectory()
   const par2Out = path.join(workDir, `${base}.par2`)
@@ -77,9 +77,10 @@ export async function generatePar2({ source, workDir, base, redundancy, volumes,
 
   const args = ['create', '-q', `-r${redundancy}`]
   if (volumes > 0) args.push(`-n${volumes}`)
+  if (memoryMB > 0) args.push(`-m${memoryMB}`)
   args.push('-a', par2Out, '-B', basePath, '--', ...files)
 
-  onLine?.(`[PAR2] redundância ${redundancy}% sobre ${files.length} arquivo(s)`)
+  onLine?.(`[PAR2] redundância ${redundancy}% sobre ${files.length} arquivo(s)${memoryMB > 0 ? ` (memória ${memoryMB} MB)` : ''}`)
   const { code } = await run(bin, args, { onLine, signal })
   if (code !== 0) throw new Error(`par2 saiu com código ${code}`)
 

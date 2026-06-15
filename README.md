@@ -211,5 +211,15 @@ tar -xJf nyuu-gui-0.1.0-linux-x64.tar.xz && cd nyuu-gui
   upload.
 - **Pausar** um job em execução mata o `nyuu`/`par2`; para continuar use **retomar** (que
   reenfileira do início da pipeline).
+- **Performance do par2 (importante para releases grandes):** o `par2cmdline` clássico é
+  single-thread e, com pouca memória, **relê a fonte várias vezes** (multi-pass) — o que torna
+  a etapa lentíssima. Dois ganhos enormes:
+  1. Use o **[par2cmdline-turbo](https://github.com/animetosho/par2cmdline-turbo)** (drop-in,
+     multi-thread/SIMD): instale o binário e aponte **Geral → Binário par2** para ele.
+  2. Defina **Geral → Memória do par2 (MB)** (ex.: 2048-4096) para o par2 segurar os blocos de
+     recuperação na RAM e ler a fonte **uma vez só**. Em testes, uma temporada de ~30GB caiu de
+     **~40 min para ~3 min**. `0` = comportamento padrão (não passa `-m`).
+- **Disco de scratch para o par2:** veja **Geral → Workdir do par2** — tira as micro-escritas
+  do array principal (ZFS) para um disco separado; só o `.nzb`/`.nfo` vão para a pasta de saída.
 - Categorias do Curupira que já vêm configuradas: `2040` Movies/HD, `2045` Movies/UHD,
   `5040` TV/HD, `5045` TV/UHD.

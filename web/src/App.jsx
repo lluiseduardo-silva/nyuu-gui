@@ -77,7 +77,7 @@ export default function App() {
       {tab === 'queue' && <QueuePage jobs={jobs} setJobs={setJobs} />}
       {tab === 'add' && <AddJobPage system={system} onCreated={() => { refresh(); setTab('queue') }} />}
       {tab === 'indexer' && <IndexerPage />}
-      {tab === 'general' && <GeneralPage onSaved={loadSystem} />}
+      {tab === 'general' && <GeneralPage system={system} onSaved={loadSystem} />}
       {tab === 'nyuu' && <NyuuConfigPage />}
     </div>
   )

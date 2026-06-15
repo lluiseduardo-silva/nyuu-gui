@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
 
 // Tela "Geral": caminhos, binários, padrões de par2/post, concorrência e modo mock.
-export default function GeneralPage({ onSaved }) {
+export default function GeneralPage({ system, onSaved }) {
   const [s, setS] = useState(null)
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
@@ -68,6 +68,17 @@ export default function GeneralPage({ onSaved }) {
             </select>
           </label>
         </div>
+        <div className="grid2">
+          <label className="field"><span>Memória do par2 (MB) — 0 = padrão do par2</span>
+            <input type="number" min="0" value={s.par2.memoryMB ?? 0} onChange={(e) => upd('par2.memoryMB', Number(e.target.value))} placeholder="ex: 2048" />
+          </label>
+        </div>
+        <p className="muted" style={{ marginTop: 0, fontSize: '.8rem' }}>
+          Mais memória = o par2 segura os blocos de recuperação na RAM e lê a fonte <b>uma vez só</b>
+          {' '}(em vez de reler o conteúdo várias vezes). Acelera <b>muito</b> séries grandes.
+          {system?.mem?.totalMB ? ` RAM da máquina: ~${Math.round(system.mem.totalMB / 1024)} GB — deixe folga pro resto.` : ''}
+          {' '}<code>0</code> não passa <code>-m</code> (comportamento padrão).
+        </p>
         <div className="grid2">
           <label className="field"><span>Concorrência (jobs simultâneos)</span>
             <input type="number" min="1" value={s.concurrency} onChange={(e) => upd('concurrency', Number(e.target.value))} />
