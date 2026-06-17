@@ -18,15 +18,19 @@ com o indexador.
 
 Por que chamar o `nyuu` como subprocesso e não via API? O nyuu é um binário CLI e **não expõe
 uma API programática estável**. Chamar o CLI (a interface documentada) isola crashes e é
-muito mais robusto. O `par2` e o `mediainfo` também são binários externos — o nyuu não gera
-par2 sozinho (a integração com ParPar ainda é "planned feature").
+muito mais robusto. A geração de paridade e o `mediainfo` também são binários externos. A
+paridade é **modular** (veja [Algoritmo de paridade](#algoritmo-de-paridade--paralelismo)): o
+padrão é o **[ParPar](https://github.com/animetosho/ParPar)** (multi-thread, mais orgânico com
+o nyuu), com o `par2cmdline`/`par2cmdline-turbo` como alternativa. O próprio nyuu **não gera
+par2 sozinho** (a integração nativa com ParPar nele ainda é "planned feature").
 
 ## Arquitetura
 
 ```
 web/      Frontend React (Vite). Em produção é buildado para web/dist.
 server/   Backend Node (Fastify + better-sqlite3).
-          ├─ exec/       runner de subprocessos + binários (nyuu/par2/mediainfo) + mocks
+          ├─ exec/       runner de subprocessos + binários (nyuu/mediainfo) + mocks
+          │              └─ algorithms/  factory de paridade (parpar.js, par2cmdline.js) — plugável
           ├─ providers/  factory de indexadores (curupira.js, ...) — plugável
           ├─ queue/      worker da fila + pipeline das etapas
           ├─ store/      jobs (SQLite), settings, nyuu.json
@@ -60,8 +64,9 @@ Abra **http://localhost:5173**. No Windows o mock já vem ligado.
 
 ## Produção — Linux nativo (LXC Debian 13)
 
-No deploy nativo a aplicação **assume que `nyuu`, `par2` e `mediainfo` já estão instalados**
-no host e disponíveis no PATH (não instala nada). Pré-requisitos: `node` >= 20.19 (o build do
+No deploy nativo a aplicação **assume que `nyuu`, o gerador de paridade (`parpar` por padrão,
+ou `par2`) e `mediainfo` já estão instalados** no host e disponíveis no PATH (não instala nada).
+Instale o ParPar com `npm i -g @animetosho/parpar`. Pré-requisitos: `node` >= 20.19 (o build do
 Vite exige 20.19+; o runtime roda em 20.x).
 
 ```bash
@@ -136,14 +141,46 @@ Variáveis opcionais: `VERSION=vX.Y.Z`, `PORT=8787`, `DATA_DIR=/var/lib/nyuu-gui
 
 A configuração é dividida por assunto (sem uma tela única gigante):
 
-- **Geral** — pasta de saída, workdir do par2, caminhos dos binários, padrões de par2
-  (redundância/volumes), subpastas, concorrência e o toggle de **mock**.
+- **Geral** — pasta de saída, workdir do par2, caminhos dos binários, **algoritmo de paridade**
+  (ParPar/par2cmdline) e seus padrões (redundância/volumes/memória), subpastas, **paralelismo
+  paridade ∥ upload**, concorrência e o toggle de **mock**.
 - **Indexador** — liga/desliga o envio, escolhe o **provider** (factory) e configura
   dinamicamente os campos que ele exige + a lista de categorias.
 - **Config nyuu** — editor JSON puro do `nyuu.json` (lido pelo nyuu via `-C`).
 
 Senha do nyuu e segredos dos providers (API keys) são mascarados na interface e nunca
 retornam em texto puro pela API.
+
+## Algoritmo de paridade & paralelismo
+
+A geração de paridade é **modular** (factory em `server/src/exec/algorithms/`, mesmo padrão dos
+providers de indexador). Em **Geral → Algoritmo de paridade** você escolhe:
+
+- **ParPar** (padrão) — criador de PAR2 multi-thread/SIMD do mesmo autor do nyuu; bem mais rápido
+  que o par2cmdline clássico. Requer `npm i -g @animetosho/parpar`. Controles: redundância (%) e
+  **slices** (`-s`); a contagem de "volumes" do par2cmdline não se aplica.
+- **par2cmdline** — o clássico (e o drop-in `par2cmdline-turbo`). Use redundância (%) + volumes.
+
+O algoritmo também pode ser sobrescrito **por job** na tela **+ Novo backup**. Para adicionar
+outro algoritmo, crie um módulo em `server/src/exec/algorithms/` (com `id`, `binKey`,
+`configSchema` e `generate()`) e registre-o no `index.js` — ele aparece sozinho na UI.
+
+### Paralelismo paridade ∥ upload (experimental)
+
+Por padrão o pipeline é **sequencial**: gera toda a paridade, depois sobe fonte + par2 num único
+NZB. Em **Geral → Paralelismo** você pode ligar o modo **two-pass**: o nyuu sobe a **fonte**
+enquanto a paridade é gerada **ao mesmo tempo**; depois os `.par2` são postados e os dois NZBs
+são **mesclados** num só (`server/src/exec/nzb.js`).
+
+- **Ganha** tempo em **releases grandes únicos** (sobrepõe a CPU da paridade com a rede do upload).
+- **Custa** mais **RAM e I/O** (paridade + upload lendo a fonte ao mesmo tempo) — combine com um
+  `-m` (memória) moderado para a fonte ser lida uma vez só.
+- Para uma **fila cheia**, prefira aumentar a **Concorrência**: ela já sobrepõe a paridade de um
+  job com o upload de outro, sem custo de integridade de NZB.
+
+> Por que não streaming "de verdade" (par2 transmitido direto pro nyuu)? Porque a CLI do ParPar
+> não escreve em stdout nem estima o tamanho do output, e o nyuu ainda não tem integração nativa
+> de ParPar — então o caminho robusto hoje é o **two-pass + merge**.
 
 ## Adicionando um provider de indexador
 
@@ -211,14 +248,17 @@ tar -xJf nyuu-gui-0.1.0-linux-x64.tar.xz && cd nyuu-gui
   upload.
 - **Pausar** um job em execução mata o `nyuu`/`par2`; para continuar use **retomar** (que
   reenfileira do início da pipeline).
-- **Performance do par2 (importante para releases grandes):** o `par2cmdline` clássico é
+- **Performance da paridade (importante para releases grandes):** o `par2cmdline` clássico é
   single-thread e, com pouca memória, **relê a fonte várias vezes** (multi-pass) — o que torna
-  a etapa lentíssima. Dois ganhos enormes:
-  1. Use o **[par2cmdline-turbo](https://github.com/animetosho/par2cmdline-turbo)** (drop-in,
-     multi-thread/SIMD): instale o binário e aponte **Geral → Binário par2** para ele.
-  2. Defina **Geral → Memória do par2 (MB)** (ex.: 2048-4096) para o par2 segurar os blocos de
+  a etapa lentíssima. Ganhos enormes:
+  1. Use o **ParPar** (padrão, multi-thread/SIMD) — ou, no par2cmdline, o drop-in
+     **[par2cmdline-turbo](https://github.com/animetosho/par2cmdline-turbo)** apontando
+     **Geral → Binário par2** para ele.
+  2. Defina **Geral → Memória (MB)** (ex.: 2048-4096) para a paridade segurar os blocos de
      recuperação na RAM e ler a fonte **uma vez só**. Em testes, uma temporada de ~30GB caiu de
      **~40 min para ~3 min**. `0` = comportamento padrão (não passa `-m`).
+  3. Para releases grandes únicos, experimente o **paralelismo two-pass** (acima) — sobe a fonte
+     enquanto gera a paridade.
 - **Disco de scratch para o par2:** veja **Geral → Workdir do par2** — tira as micro-escritas
   do array principal (ZFS) para um disco separado; só o `.nzb`/`.nfo` vão para a pasta de saída.
 - Categorias do Curupira que já vêm configuradas: `2040` Movies/HD, `2045` Movies/UHD,

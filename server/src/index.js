@@ -12,6 +12,7 @@ import { registerSettings } from './routes/settings.js'
 import { registerSystem } from './routes/system.js'
 import { registerFs } from './routes/fs.js'
 import { registerProviders } from './routes/providers.js'
+import { registerAlgorithms } from './routes/algorithms.js'
 
 migrate()
 ensureNyuuConfigFile()
@@ -28,6 +29,7 @@ registerSettings(app)
 registerSystem(app)
 registerFs(app)
 registerProviders(app)
+registerAlgorithms(app)
 
 // Em produção, serve o frontend buildado (web/dist) e faz fallback SPA.
 if (fs.existsSync(WEB_DIST)) {

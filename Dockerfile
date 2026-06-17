@@ -11,8 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# nyuu (poster Usenet) instalado globalmente -> fica no PATH como `nyuu`.
-RUN npm install -g nyuu
+# nyuu (poster Usenet) + ParPar (gerador de paridade PADRÃO, multi-thread) instalados
+# globalmente -> ficam no PATH como `nyuu` e `parpar`. (par2cmdline fica como fallback.)
+RUN npm install -g nyuu @animetosho/parpar
 
 WORKDIR /app
 

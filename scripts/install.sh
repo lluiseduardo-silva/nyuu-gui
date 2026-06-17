@@ -106,7 +106,14 @@ if ! command -v nyuu >/dev/null 2>&1; then
   echo ""
   echo "!! ATENÇÃO: 'nyuu' não está no PATH."
   echo "   Instale com: npm i -g nyuu   (requer node/npm + build-essential python3)"
-  echo "   Ou rode via Docker, que já traz nyuu/par2/mediainfo."
+  echo "   Ou rode via Docker, que já traz nyuu/par2/parpar/mediainfo."
+fi
+
+if ! command -v parpar >/dev/null 2>&1; then
+  echo ""
+  echo "!! ATENÇÃO: 'parpar' (algoritmo de paridade PADRÃO) não está no PATH."
+  echo "   Instale com: npm i -g @animetosho/parpar"
+  echo "   (ou, em Geral → Algoritmo de paridade, troque para par2cmdline — par2 já foi instalado via apt.)"
 fi
 
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"

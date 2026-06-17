@@ -1,6 +1,7 @@
 import { db } from '../db.js'
 import { resolveMockDefault } from '../config.js'
 import { listProviders } from '../providers/index.js'
+import { listAlgorithms, DEFAULT_ALGORITHM } from '../exec/algorithms/index.js'
 
 const KEY = 'app'
 export const SECRET_MASK = '••••••••'
@@ -12,6 +13,13 @@ function defaults() {
   for (const p of listProviders()) {
     configs[p.id] = { ...p.defaultConfig, categories: p.defaultCategories }
   }
+  // Config inicial por algoritmo de paridade + binários padrão (factory).
+  const parityConfigs = {}
+  const algoBins = {}
+  for (const a of listAlgorithms()) {
+    parityConfigs[a.id] = { ...a.defaultConfig }
+    algoBins[a.binKey] = a.defaultBin // ex: bin.par2='par2', bin.parpar='parpar'
+  }
   return {
     paths: {
       outDir: '',       // pasta de saída de NZB/NFO (vazio = ./data/out)
@@ -19,11 +27,15 @@ function defaults() {
     },
     bin: {
       nyuu: 'nyuu',
-      par2: 'par2',
       mediainfo: 'mediainfo',
+      ...algoBins,
     },
+    // Parâmetros GENÉRICOS de paridade (valem p/ qualquer algoritmo).
     par2: { redundancy: 10, volumes: 7, keep: false, memoryMB: 0 },
-    post: { subdirs: 'keep' },
+    // Seleção do algoritmo + config ESPECÍFICA de cada um (slices/threads do parpar etc).
+    parity: { algorithm: DEFAULT_ALGORITHM, configs: parityConfigs },
+    // parallelMode: 'off' (sequencial) | 'twopass' (sobe a fonte ∥ gera par2; depois merge de NZB).
+    post: { subdirs: 'keep', parallelMode: 'off' },
     indexer: {
       enabled: false,
       provider: 'curupira', // provider ativo

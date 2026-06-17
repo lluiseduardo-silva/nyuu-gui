@@ -22,6 +22,7 @@ function normalizeOptions(o = {}) {
     redundancy: o.redundancy,
     volumes: o.volumes,
     subdirs: o.subdirs,
+    algorithm: o.algorithm || undefined, // undefined = usa o algoritmo global
     index: o.index !== false,
   }
 }

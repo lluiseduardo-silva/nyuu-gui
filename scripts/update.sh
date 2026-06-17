@@ -60,3 +60,23 @@ systemctl start nyuu-gui
 
 echo ">> Atualizado para $TAG."
 systemctl --no-pager status nyuu-gui | head -n 4 || true
+
+# A partir do v0.1.4 o algoritmo de paridade PADRÃO é o ParPar (binário `parpar`, via npm).
+# Instalações antigas (DATA_DIR preservado, sem `parity` salvo) passam a usá-lo por padrão —
+# então garante/avisa para o job não falhar no início com "binário 'parpar' não encontrado".
+if ! command -v parpar >/dev/null 2>&1; then
+  echo ""
+  echo ">> 'parpar' (algoritmo de paridade PADRÃO desde v0.1.4) não está no PATH."
+  if command -v npm >/dev/null 2>&1; then
+    echo ">> Instalando via npm (npm i -g @animetosho/parpar)..."
+    npm i -g @animetosho/parpar >/dev/null 2>&1 \
+      && echo ">> parpar instalado." \
+      || echo "!! Falha ao instalar parpar via npm (faltam toolchain/prebuilds? tente manualmente)."
+  else
+    echo "!! npm não encontrado — instale Node/npm e rode: npm i -g @animetosho/parpar"
+  fi
+  if ! command -v parpar >/dev/null 2>&1; then
+    echo "!! ATENÇÃO: sem 'parpar', em Geral → Algoritmo de paridade troque para 'par2cmdline'"
+    echo "   (o par2 já deve estar instalado), ou instale o parpar — o serviço o acha sem restart."
+  fi
+fi

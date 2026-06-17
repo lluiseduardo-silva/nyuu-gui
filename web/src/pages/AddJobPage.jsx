@@ -15,10 +15,15 @@ export default function AddJobPage({ system, onCreated }) {
   const [redundancy, setRedundancy] = useState('')
   const [volumes, setVolumes] = useState('')
   const [subdirs, setSubdirs] = useState('')
+  const [algorithm, setAlgorithm] = useState('')
+  const [algorithms, setAlgorithms] = useState([])
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => { api.getSettings().then((d) => setSettings(d.settings)).catch(() => {}) }, [])
+  useEffect(() => {
+    api.getSettings().then((d) => setSettings(d.settings)).catch(() => {})
+    api.algorithms().then((a) => setAlgorithms(a.algorithms)).catch(() => {})
+  }, [])
 
   const indexer = settings?.indexer
   const provId = indexer?.provider
@@ -52,6 +57,7 @@ export default function AddJobPage({ system, onCreated }) {
           redundancy: redundancy === '' ? undefined : Number(redundancy),
           volumes: volumes === '' ? undefined : Number(volumes),
           subdirs: subdirs || undefined,
+          algorithm: algorithm || undefined,
         },
       })
       if (res.errors?.length) {
@@ -123,6 +129,16 @@ export default function AddJobPage({ system, onCreated }) {
             <option value="keep">keep</option>
             <option value="include">include</option>
             <option value="skip">skip</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="grid2">
+        <label className="field">
+          <span>Algoritmo de paridade</span>
+          <select value={algorithm} onChange={(e) => setAlgorithm(e.target.value)}>
+            <option value="">padrão ({settings?.parity?.algorithm || 'parpar'})</option>
+            {algorithms.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
           </select>
         </label>
       </div>

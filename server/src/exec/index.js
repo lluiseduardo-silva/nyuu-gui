@@ -11,6 +11,7 @@ export function getExecutor(useMock) {
       generateNfo: mock.generateNfo,
       generatePar2: mock.generatePar2,
       postNyuu: mock.postNyuu,
+      postNyuuInputs: mock.postNyuuInputs,
     }
   }
   return {
@@ -18,8 +19,10 @@ export function getExecutor(useMock) {
     generateNfo: real.generateNfo,
     generatePar2: real.generatePar2,
     postNyuu: real.postNyuu,
+    postNyuuInputs: real.postNyuuInputs,
   }
 }
 
 export { parsePercent } from './tools.js'
 export { binaryAvailable }
+export { getAlgorithm, listAlgorithms, algorithmIds, DEFAULT_ALGORITHM } from './algorithms/index.js'

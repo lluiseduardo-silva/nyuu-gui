@@ -26,5 +26,6 @@ export const api = {
   getSettings: () => req('GET', '/api/settings'),
   saveSettings: (settings) => req('PUT', '/api/settings', { settings }),
   providers: () => req('GET', '/api/providers'),
+  algorithms: () => req('GET', '/api/algorithms'),
   browse: (p) => req('GET', `/api/fs?path=${encodeURIComponent(p || '')}`),
 }

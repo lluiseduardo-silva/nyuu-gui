@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { run, runCapture } from './runner.js'
+import { getAlgorithm, DEFAULT_ALGORITHM } from './algorithms/index.js'
 
 const VIDEO_EXT = new Set(['.mkv', '.mp4', '.avi', '.mov', '.ts', '.m2ts', '.wmv', '.flv'])
 const PCT = /(\d{1,3}(?:\.\d+)?)\s*%/
@@ -56,10 +57,14 @@ export async function generateNfo({ source, nfoPath, bin, onLine, signal }) {
 }
 
 // 2. par2 num workdir gravável (nunca dentro da fonte).
-export async function generatePar2({ source, workDir, base, redundancy, volumes, memoryMB, bin, onLine, signal }) {
+// Dispatcher: resolve a parte comum (workdir, lista de arquivos, basePath, re-listar
+// os .par2 gerados) e delega a montagem dos args + execução ao algoritmo escolhido
+// (par2cmdline / parpar / ...), conforme exec/algorithms/.
+export async function generatePar2({
+  source, workDir, base, redundancy, volumes, memoryMB, algorithm, algoConfig, bin, onLine, signal,
+}) {
   fs.mkdirSync(workDir, { recursive: true })
   const isDir = fs.statSync(source).isDirectory()
-  const par2Out = path.join(workDir, `${base}.par2`)
 
   let basePath
   let files
@@ -75,14 +80,11 @@ export async function generatePar2({ source, workDir, base, redundancy, volumes,
     return []
   }
 
-  const args = ['create', '-q', `-r${redundancy}`]
-  if (volumes > 0) args.push(`-n${volumes}`)
-  if (memoryMB > 0) args.push(`-m${memoryMB}`)
-  args.push('-a', par2Out, '-B', basePath, '--', ...files)
-
-  onLine?.(`[PAR2] redundância ${redundancy}% sobre ${files.length} arquivo(s)${memoryMB > 0 ? ` (memória ${memoryMB} MB)` : ''}`)
-  const { code } = await run(bin, args, { onLine, signal })
-  if (code !== 0) throw new Error(`par2 saiu com código ${code}`)
+  const algo = getAlgorithm(algorithm || DEFAULT_ALGORITHM)
+  await algo.generate({
+    source, workDir, base, files, basePath,
+    redundancy, volumes, memoryMB, config: algoConfig || {}, bin, onLine, signal,
+  })
 
   const par2Files = fs
     .readdirSync(workDir)
@@ -92,9 +94,11 @@ export async function generatePar2({ source, workDir, base, redundancy, volumes,
   return par2Files
 }
 
-// 3. Posta fonte + par2 com o nyuu, gerando o NZB.
-export async function postNyuu({
-  source, par2Files, nzbPath, configPath, subdirs, bin, categoryId, nzbTitle, onLine, signal,
+// 3a. Posta uma lista arbitrária de inputs com o nyuu, gerando um NZB.
+// Base genérica usada tanto pelo caminho sequencial (fonte + par2 juntos) quanto
+// pelo modo paralelo two-pass (fonte e par2 em invocações separadas).
+export async function postNyuuInputs({
+  inputs, nzbPath, configPath, subdirs, bin, categoryId, nzbTitle, onLine, signal,
 }) {
   const args = [
     '-C', configPath,
@@ -106,11 +110,22 @@ export async function postNyuu({
   ]
   if (categoryId) args.push('--nzb-category', String(categoryId))
   if (nzbTitle) args.push('--nzb-title', nzbTitle)
-  args.push(source, ...par2Files)
+  args.push(...inputs)
 
-  onLine?.(`[POST] nyuu enviando "${source}" + ${par2Files.length} par2`)
   const { code } = await run(bin, args, { onLine, signal })
   if (code !== 0) throw new Error(`nyuu saiu com código ${code}`)
-  onLine?.(`[POST] NZB salvo em ${nzbPath}`)
   return { nzbPath }
+}
+
+// 3b. Posta fonte + par2 num único NZB (caminho sequencial).
+export async function postNyuu({
+  source, par2Files, nzbPath, configPath, subdirs, bin, categoryId, nzbTitle, onLine, signal,
+}) {
+  onLine?.(`[POST] nyuu enviando "${source}" + ${par2Files.length} par2`)
+  const r = await postNyuuInputs({
+    inputs: [source, ...par2Files],
+    nzbPath, configPath, subdirs, bin, categoryId, nzbTitle, onLine, signal,
+  })
+  onLine?.(`[POST] NZB salvo em ${nzbPath}`)
+  return r
 }
