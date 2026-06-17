@@ -6,10 +6,12 @@ import { run } from '../runner.js'
 //   parpar -s <slices|tamanho> -r <redundância%> [-m <mem>M] [-t <threads>]
 //          --filepath-format path -B <basePath> -o <base> -- <files...>
 //
-// Equivalências de flags (verificado na doc oficial do ParPar):
+// Equivalências de flags (verificado na doc oficial do ParPar 0.4.x):
 //   redundância %        -> `-r<n>%`   (sem o `%`, `-r<n>` seria CONTAGEM de slices!)
 //   memória MB           -> `-m<n>M`
-//   base de caminhos     -> `--filepath-format=path -B <basePath>` ≡ `-B` do par2cmdline
+//   caminhos relativos   -> `--filepath-format common` (descarta o prefixo comum dos
+//                           caminhos) ≡ ao `-B <source>` do par2cmdline, SEM flag de base.
+//                           (Não usar `-B`: o short flag não é aceito em algumas versões.)
 //   saída                -> `-o <base>` (o ParPar acrescenta `.par2`)
 //   "volumes" (par2 -n)  -> SEM equivalente direto (o ParPar controla via slices) — ignorado
 export const id = 'parpar'
@@ -39,7 +41,7 @@ export const configSchema = [
 export const defaultConfig = { sliceSize: '', threads: 0 }
 
 export async function generate({
-  workDir, base, files, basePath, redundancy, memoryMB, config, bin, onLine, signal,
+  workDir, base, files, redundancy, memoryMB, config, bin, onLine, signal,
 }) {
   const outBase = path.join(workDir, base)
   const slices = String(config?.sliceSize ?? '').trim() || DEFAULT_SLICES
@@ -48,7 +50,7 @@ export async function generate({
   const args = ['-s', slices, '-r', `${redundancy}%`]
   if (memoryMB > 0) args.push('-m', `${memoryMB}M`)
   if (threads > 0) args.push('-t', String(threads))
-  args.push('--filepath-format', 'path', '-B', basePath)
+  args.push('--filepath-format', 'common')
   args.push('-o', outBase, '--', ...files)
 
   onLine?.(`[PAR2] ParPar redundância ${redundancy}% (slices ${slices}) sobre ${files.length} arquivo(s)${memoryMB > 0 ? ` (memória ${memoryMB} MB)` : ''}`)
