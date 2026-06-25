@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { AbortError } from './runner.js'
+import { emptyDir } from './tools.js'
 
 // Sleep que rejeita se o job for cancelado.
 function sleep(ms, signal) {
@@ -30,6 +31,7 @@ export async function generateNfo({ source, nfoPath, onLine, signal }) {
 
 export async function generatePar2({ source, workDir, base, redundancy, algorithm, onLine, signal }) {
   fs.mkdirSync(workDir, { recursive: true })
+  emptyDir(workDir) // idempotência: começa de um workdir limpo (igual ao caminho real)
   onLine?.(`[PAR2] (mock) ${algorithm || 'parpar'} redundância ${redundancy}%`)
   await fakeProgress('[PAR2] Constructing', 2500, onLine, signal)
   const files = [

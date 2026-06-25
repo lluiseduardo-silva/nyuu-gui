@@ -1,5 +1,5 @@
 import {
-  getNextQueued, updateJob, countRunning, requeueInterrupted,
+  getNextQueued, getJob, updateJob, countRunning, requeueInterrupted,
 } from '../store/jobs.js'
 import { getSettings } from '../store/settings.js'
 import { processJob } from './pipeline.js'
@@ -9,6 +9,8 @@ import { AbortError } from '../exec/runner.js'
 const running = new Map() // jobId -> AbortController
 let loopActive = false
 let kickPending = false
+
+const mapStages = (stages, fn) => (Array.isArray(stages) ? stages.map(fn) : stages ?? null)
 
 export function startWorker() {
   const ids = requeueInterrupted()
@@ -58,14 +60,24 @@ function startJob(jobId) {
       appendLog(jobId, '[WORKER] ✓ concluído')
     })
     .catch((err) => {
+      const stages = getJob(jobId)?.stages
       if (err instanceof AbortError || err?.name === 'AbortError') {
-        updateJob(jobId, { status: 'paused', stage: null })
+        // Pausa/cancelamento: a etapa em andamento não concluiu — volta a pendente.
+        // Artefatos NÃO são apagados (o resume depende deles; a idempotência do par2
+        // já é garantida pela limpeza do workdir no início da geração).
+        updateJob(jobId, {
+          status: 'paused', stage: null,
+          stages: mapStages(stages, (s) => (s.status === 'running' ? { ...s, status: 'pending', startedAt: undefined } : s)),
+        })
         appendLog(jobId, '[WORKER] ⏸ pausado/cancelado')
       } else {
+        // Falha: marca a etapa em andamento como `failed` para o resume saber onde parou.
+        const msg = String(err?.message || err)
         updateJob(jobId, {
-          status: 'failed', error: String(err?.message || err), finished_at: Date.now(),
+          status: 'failed', error: msg, finished_at: Date.now(),
+          stages: mapStages(stages, (s) => (s.status === 'running' ? { ...s, status: 'failed', finishedAt: Date.now(), error: msg } : s)),
         })
-        appendLog(jobId, `[WORKER] ✗ falhou: ${err?.message || err}`)
+        appendLog(jobId, `[WORKER] ✗ falhou: ${msg}`)
       }
     })
     .finally(() => {

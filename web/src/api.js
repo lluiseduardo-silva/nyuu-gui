@@ -17,6 +17,7 @@ export const api = {
   createJob: (job) => req('POST', '/api/jobs', job),
   createJobsBatch: (payload) => req('POST', '/api/jobs/batch', payload),
   retryJob: (id) => req('POST', `/api/jobs/${id}/retry`),
+  resetJob: (id) => req('POST', `/api/jobs/${id}/retry?mode=fresh`),
   pauseJob: (id) => req('POST', `/api/jobs/${id}/pause`),
   resumeJob: (id) => req('POST', `/api/jobs/${id}/resume`),
   deleteJob: (id) => req('DELETE', `/api/jobs/${id}`),

@@ -3,7 +3,7 @@ import path from 'node:path'
 import { getJob, updateJob } from '../store/jobs.js'
 import { getSettings } from '../store/settings.js'
 import { ensureNyuuConfigFile } from '../store/nyuuConfig.js'
-import { getExecutor, parsePercent, getAlgorithm, DEFAULT_ALGORITHM, binaryAvailable } from '../exec/index.js'
+import { getExecutor, parsePercent, getAlgorithm, DEFAULT_ALGORITHM, binaryAvailable, listPar2Files } from '../exec/index.js'
 import { mergeNzbFiles } from '../exec/nzb.js'
 import { getProvider, mockUpload } from '../providers/index.js'
 import { appendLog } from '../logger.js'
@@ -15,6 +15,31 @@ function deriveBase(source) {
   const bn = path.basename(clean)
   const isDir = fs.statSync(source).isDirectory()
   return isDir ? bn : bn.replace(/\.[^.]+$/, '')
+}
+
+const STAGE_LABELS = { nfo: 'NFO', par2: 'Paridade', posting: 'Postagem', indexing: 'Indexador' }
+
+// Monta o plano de etapas aplicáveis ao job. No modo paralelo (two-pass) a paridade é
+// gerada DENTRO da postagem, então não há etapa 'par2' separada (posting.parallel=true).
+function buildPlan({ makeNfo, doPar2Seq, useParallel, doIndex }) {
+  const plan = []
+  if (makeNfo) plan.push({ key: 'nfo' })
+  if (doPar2Seq) plan.push({ key: 'par2' })
+  plan.push(useParallel ? { key: 'posting', parallel: true } : { key: 'posting' })
+  if (doIndex) plan.push({ key: 'indexing' })
+  return plan.map((s) => ({ ...s, label: STAGE_LABELS[s.key], status: 'pending' }))
+}
+
+// Resume: herda os marcadores `done` (e seus tempos) de um run anterior por chave de etapa.
+function mergePlan(plan, prior) {
+  if (!Array.isArray(prior)) return plan
+  const byKey = new Map(prior.map((s) => [s.key, s]))
+  return plan.map((s) => {
+    const p = byKey.get(s.key)
+    return p?.status === 'done'
+      ? { ...s, status: 'done', startedAt: p.startedAt, finishedAt: p.finishedAt }
+      : s
+  })
 }
 
 // Roda dois ramos em paralelo sob o mesmo cancelamento do job. Se UM falhar com erro
@@ -72,11 +97,27 @@ export async function processJob(jobId, signal) {
   const par2Bin = settings.bin[algoMeta.binKey] || algoMeta.defaultBin
   const algoConfig = parity.configs?.[algorithm] || {}
   const parallelMode = settings.post?.parallelMode || 'off'
+  const useParallel = redundancy > 0 && parallelMode === 'twopass'
 
   const log = (line) => appendLog(jobId, line)
-  const setStage = (stage) => {
-    updateJob(jobId, { stage, progress: 0 })
-    emit({ type: 'job:progress', id: jobId, stage, progress: 0 })
+
+  // Plano de etapas (resume: herda os `done` de um run anterior, se houver).
+  const stages = mergePlan(
+    buildPlan({ makeNfo, doPar2Seq: redundancy > 0 && !useParallel, useParallel, doIndex }),
+    job.stages,
+  )
+  const findStage = (key) => stages.find((s) => s.key === key)
+  const isDone = (key) => findStage(key)?.status === 'done'
+  const beginStage = (key) => {
+    const s = findStage(key)
+    if (s) { s.status = 'running'; s.startedAt = Date.now(); delete s.error; delete s.finishedAt }
+    updateJob(jobId, { stage: key, progress: 0, stages })
+    emit({ type: 'job:progress', id: jobId, stage: key, progress: 0 })
+  }
+  const endStage = (key) => {
+    const s = findStage(key)
+    if (s) { s.status = 'done'; s.finishedAt = Date.now() }
+    updateJob(jobId, { stages })
   }
   // sub (opcional) rotula sub-fluxos concorrentes (ex: 'upload' vs 'par2') no modo paralelo.
   const makeOnLine = (stage, sub) => (line) => {
@@ -88,14 +129,23 @@ export async function processJob(jobId, signal) {
     }
   }
 
+  // Persiste o plano inicial para a UI mostrar as etapas (pending) antes da 1ª transição.
+  updateJob(jobId, { stages })
+
   if (exec.mock) log('[WORKER] modo MOCK ativo — binários simulados')
 
   // 1. NFO
   let nfoMade = false
   if (makeNfo) {
-    setStage('nfo')
-    const r = await exec.generateNfo({ source, nfoPath, bin: settings.bin.mediainfo, onLine: makeOnLine('nfo'), signal })
-    nfoMade = !!r?.video
+    if (isDone('nfo') && fs.existsSync(nfoPath)) {
+      log('[NFO ] reaproveitado de run anterior')
+      nfoMade = true
+    } else {
+      beginStage('nfo')
+      const r = await exec.generateNfo({ source, nfoPath, bin: settings.bin.mediainfo, onLine: makeOnLine('nfo'), signal })
+      nfoMade = !!r?.video
+      endStage('nfo')
+    }
   } else {
     log('[NFO ] desativado para este job')
   }
@@ -106,74 +156,97 @@ export async function processJob(jobId, signal) {
   }
 
   const configPath = ensureNyuuConfigFile()
-  const useParallel = redundancy > 0 && parallelMode === 'twopass'
 
   if (useParallel) {
     // 2+3 PARALELO (two-pass): sobe a FONTE ∥ gera par2; depois sobe os par2; depois
     // junta os dois NZBs num só. Ganha em release grande único (rede ∥ CPU).
-    setStage('posting')
-    log(`[PARALELO] two-pass: subindo a fonte e gerando paridade (${algorithm}) ao mesmo tempo`)
-    const nzbSource = path.join(outDir, `${base}.source.nzb`)
-    const nzbPar2 = path.join(outDir, `${base}.par2.nzb`)
+    if (isDone('posting') && fs.existsSync(nzbPath)) {
+      log('[POST] reaproveitado de run anterior (NZB já existe)')
+    } else {
+      beginStage('posting')
+      log(`[PARALELO] two-pass: subindo a fonte e gerando paridade (${algorithm}) ao mesmo tempo`)
+      const nzbSource = path.join(outDir, `${base}.source.nzb`)
+      const nzbPar2 = path.join(outDir, `${base}.par2.nzb`)
 
-    const [, par2Files] = await raceBothOrAbort(signal, (s) => [
-      exec.postNyuuInputs({
-        inputs: [source], nzbPath: nzbSource, configPath, subdirs, bin: settings.bin.nyuu,
-        categoryId: job.category_id, nzbTitle: base, onLine: makeOnLine('posting', 'upload'), signal: s,
-      }),
-      exec.generatePar2({
-        source, workDir, base, redundancy, volumes, memoryMB, algorithm, algoConfig,
-        bin: par2Bin, onLine: makeOnLine('posting', 'par2'), signal: s,
-      }),
-    ])
+      const [, par2Files] = await raceBothOrAbort(signal, (s) => [
+        exec.postNyuuInputs({
+          inputs: [source], nzbPath: nzbSource, configPath, subdirs, bin: settings.bin.nyuu,
+          categoryId: job.category_id, nzbTitle: base, onLine: makeOnLine('posting', 'upload'), signal: s,
+        }),
+        exec.generatePar2({
+          source, workDir, base, redundancy, volumes, memoryMB, algorithm, algoConfig,
+          bin: par2Bin, onLine: makeOnLine('posting', 'par2'), signal: s,
+        }),
+      ])
 
-    const parts = [nzbSource]
-    if (par2Files.length) {
-      log(`[PARALELO] fonte enviada; subindo ${par2Files.length} arquivo(s) de paridade`)
-      await exec.postNyuuInputs({
-        inputs: par2Files, nzbPath: nzbPar2, configPath, subdirs, bin: settings.bin.nyuu,
-        categoryId: job.category_id, nzbTitle: base, onLine: makeOnLine('posting', 'upload-par2'), signal,
-      })
-      parts.push(nzbPar2)
+      const parts = [nzbSource]
+      if (par2Files.length) {
+        log(`[PARALELO] fonte enviada; subindo ${par2Files.length} arquivo(s) de paridade`)
+        await exec.postNyuuInputs({
+          inputs: par2Files, nzbPath: nzbPar2, configPath, subdirs, bin: settings.bin.nyuu,
+          categoryId: job.category_id, nzbTitle: base, onLine: makeOnLine('posting', 'upload-par2'), signal,
+        })
+        parts.push(nzbPar2)
+      }
+      mergeNzbFiles({ out: nzbPath, parts, log })
+      // Remove os NZBs intermediários só após o merge OK (mantê-los ajudaria no diagnóstico).
+      for (const f of [nzbSource, nzbPar2]) { if (fs.existsSync(f)) fs.rmSync(f) }
+      endStage('posting')
     }
-    mergeNzbFiles({ out: nzbPath, parts, log })
-    // Remove os NZBs intermediários só após o merge OK (mantê-los ajudaria no diagnóstico).
-    for (const f of [nzbSource, nzbPar2]) { if (fs.existsSync(f)) fs.rmSync(f) }
   } else {
     // 2+3 SEQUENCIAL: par2 completo, depois nyuu sobe fonte + par2 num único NZB.
     let par2Files = []
     if (redundancy > 0) {
-      setStage('par2')
-      par2Files = await exec.generatePar2({
-        source, workDir, base, redundancy, volumes, memoryMB, algorithm, algoConfig,
-        bin: par2Bin, onLine: makeOnLine('par2'), signal,
-      })
+      // Reaproveita a paridade de um run anterior (resume) re-listando o workdir.
+      if (isDone('par2')) {
+        par2Files = listPar2Files(workDir)
+        if (par2Files.length) log(`[PAR2] reaproveitado: ${par2Files.length} arquivo(s) de run anterior`)
+      }
+      if (!par2Files.length) {
+        beginStage('par2')
+        par2Files = await exec.generatePar2({
+          source, workDir, base, redundancy, volumes, memoryMB, algorithm, algoConfig,
+          bin: par2Bin, onLine: makeOnLine('par2'), signal,
+        })
+        endStage('par2')
+      }
     } else {
       log('[PAR2] desativado (redundância 0)')
     }
 
-    setStage('posting')
-    await exec.postNyuu({
-      source, par2Files, nzbPath, configPath, subdirs, bin: settings.bin.nyuu,
-      categoryId: job.category_id, nzbTitle: base, onLine: makeOnLine('posting'), signal,
-    })
+    if (isDone('posting') && fs.existsSync(nzbPath)) {
+      log('[POST] reaproveitado de run anterior (NZB já existe)')
+    } else {
+      beginStage('posting')
+      await exec.postNyuu({
+        source, par2Files, nzbPath, configPath, subdirs, bin: settings.bin.nyuu,
+        categoryId: job.category_id, nzbTitle: base, onLine: makeOnLine('posting'), signal,
+      })
+      endStage('posting')
+    }
   }
   updateJob(jobId, { nzb_path: nzbPath, nfo_path: nfoMade ? nfoPath : null })
 
   // 4. INDEX (provider de indexador — factory)
   let result = null
   if (doIndex) {
-    setStage('indexing')
-    const providerId = indexer.provider
-    const config = indexer.configs?.[providerId] || {}
-    const release = {
-      nzbPath, nfoPath: nfoMade ? nfoPath : null, categoryId: job.category_id, name: base,
+    if (isDone('indexing')) {
+      log('[INDEX] já concluído anteriormente')
+      result = getJob(jobId)?.result ?? null
+    } else {
+      beginStage('indexing')
+      const providerId = indexer.provider
+      const config = indexer.configs?.[providerId] || {}
+      const release = {
+        nzbPath, nfoPath: nfoMade ? nfoPath : null, categoryId: job.category_id, name: base,
+      }
+      const r = settings.mock
+        ? await mockUpload({ ...release, onLine: makeOnLine('indexing') })
+        : await getProvider(providerId).upload({ ...release, config, onLine: makeOnLine('indexing'), signal })
+      result = r
+      if (!r.ok) throw new Error(`indexador "${providerId}" recusou o upload (HTTP ${r.status})`)
+      endStage('indexing')
     }
-    const r = settings.mock
-      ? await mockUpload({ ...release, onLine: makeOnLine('indexing') })
-      : await getProvider(providerId).upload({ ...release, config, onLine: makeOnLine('indexing'), signal })
-    result = r
-    if (!r.ok) throw new Error(`indexador "${providerId}" recusou o upload (HTTP ${r.status})`)
   } else if (indexer.enabled && !job.category_id) {
     log('[INDEX] pulado: job sem categoria definida')
   }

@@ -56,6 +56,25 @@ export async function generateNfo({ source, nfoPath, bin, onLine, signal }) {
   return { video }
 }
 
+// Lista os .par2 já presentes num workdir (caminhos absolutos). Usado tanto após gerar
+// quanto no resume (reaproveitar uma etapa de paridade que já concluiu num run anterior).
+export function listPar2Files(workDir) {
+  if (!fs.existsSync(workDir)) return []
+  return fs
+    .readdirSync(workDir)
+    .filter((f) => f.toLowerCase().endsWith('.par2'))
+    .map((f) => path.join(workDir, f))
+}
+
+// Esvazia o conteúdo de um diretório sem remover o próprio diretório (preserva um
+// possível ponto de montagem do disco de scratch). Idempotente.
+export function emptyDir(dir) {
+  if (!fs.existsSync(dir)) return
+  for (const entry of fs.readdirSync(dir)) {
+    fs.rmSync(path.join(dir, entry), { recursive: true, force: true })
+  }
+}
+
 // 2. par2 num workdir gravável (nunca dentro da fonte).
 // Dispatcher: resolve a parte comum (workdir, lista de arquivos, basePath, re-listar
 // os .par2 gerados) e delega a montagem dos args + execução ao algoritmo escolhido
@@ -64,6 +83,9 @@ export async function generatePar2({
   source, workDir, base, redundancy, volumes, memoryMB, algorithm, algoConfig, bin, onLine, signal,
 }) {
   fs.mkdirSync(workDir, { recursive: true })
+  // Idempotência: começa sempre de um workdir limpo. Resíduos de um run anterior
+  // (cancelado/falho/crash) com nomes determinísticos contaminariam a re-listagem.
+  emptyDir(workDir)
   const isDir = fs.statSync(source).isDirectory()
 
   let basePath
@@ -86,10 +108,7 @@ export async function generatePar2({
     redundancy, volumes, memoryMB, config: algoConfig || {}, bin, onLine, signal,
   })
 
-  const par2Files = fs
-    .readdirSync(workDir)
-    .filter((f) => f.toLowerCase().endsWith('.par2'))
-    .map((f) => path.join(workDir, f))
+  const par2Files = listPar2Files(workDir)
   onLine?.(`[PAR2] ${par2Files.length} arquivo(s) par2 gerados`)
   return par2Files
 }

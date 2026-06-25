@@ -35,4 +35,11 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_jobs_status   ON jobs(status);
     CREATE INDEX IF NOT EXISTS idx_jobs_position ON jobs(position);
   `)
+
+  // Migrações incrementais (CREATE TABLE IF NOT EXISTS não altera tabela existente).
+  const cols = db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name)
+  if (!cols.includes('stages')) {
+    // JSON: [{ key, label, status, startedAt, finishedAt, error?, subs? }] por etapa do pipeline
+    db.exec('ALTER TABLE jobs ADD COLUMN stages TEXT')
+  }
 }

@@ -23,6 +23,6 @@ export function getExecutor(useMock) {
   }
 }
 
-export { parsePercent } from './tools.js'
+export { parsePercent, listPar2Files } from './tools.js'
 export { binaryAvailable }
 export { getAlgorithm, listAlgorithms, algorithmIds, DEFAULT_ALGORITHM } from './algorithms/index.js'

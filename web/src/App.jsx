@@ -45,7 +45,23 @@ export default function App() {
       }
       if (ev.type === 'job:delete') return prev.filter((j) => j.id !== ev.id)
       if (ev.type === 'job:progress') {
-        return prev.map((j) => (j.id === ev.id ? { ...j, stage: ev.stage, progress: ev.progress } : j))
+        return prev.map((j) => {
+          if (j.id !== ev.id) return j
+          const next = { ...j, stage: ev.stage, progress: ev.progress }
+          // Mescla o progresso fracionário na etapa correspondente do tracker (e no
+          // sub-fluxo, quando houver — ex.: upload ∥ paridade no modo paralelo).
+          if (Array.isArray(j.stages)) {
+            next.stages = j.stages.map((s) => {
+              if (s.key !== ev.stage) return s
+              const status = s.status === 'pending' ? 'running' : s.status
+              if (ev.sub) {
+                return { ...s, status, subs: { ...(s.subs || {}), [ev.sub]: { progress: ev.progress } } }
+              }
+              return { ...s, status, progress: ev.progress }
+            })
+          }
+          return next
+        })
       }
       return prev
     })

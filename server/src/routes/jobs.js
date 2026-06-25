@@ -1,9 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  listJobs, getJob, createJob, updateJob, deleteJob, retryJob, reorderJobs,
+  listJobs, getJob, createJob, updateJob, deleteJob, retryJob, resetJob, reorderJobs,
 } from '../store/jobs.js'
-import { readLog, clearLog } from '../logger.js'
+import { appendLog, readLog, clearLog } from '../logger.js'
 import { kick, cancelRunningJob, isRunning } from '../queue/worker.js'
 
 function deriveName(source) {
@@ -80,11 +80,20 @@ export function registerJobs(app) {
     return reply.code(201).send({ created, errors })
   })
 
+  // mode=fresh: reinicia do zero (descarta etapas/artefatos e limpa o log).
+  // padrão (resume): retoma da etapa que falhou, preservando o log e os artefatos.
   app.post('/api/jobs/:id/retry', async (req, reply) => {
     const job = getJob(Number(req.params.id))
     if (!job) return reply.code(404).send({ error: 'job não encontrado' })
-    clearLog(job.id)
-    const updated = retryJob(job.id)
+    const fresh = req.query?.mode === 'fresh'
+    let updated
+    if (fresh) {
+      clearLog(job.id)
+      updated = resetJob(job.id)
+    } else {
+      appendLog(job.id, '[WORKER] ↻ retomando da última etapa não concluída')
+      updated = retryJob(job.id)
+    }
     kick()
     return { job: updated }
   })

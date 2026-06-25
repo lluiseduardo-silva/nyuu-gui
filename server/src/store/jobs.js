@@ -9,7 +9,19 @@ function rowToJob(row) {
     ...row,
     options: row.options ? JSON.parse(row.options) : {},
     result: row.result ? JSON.parse(row.result) : null,
+    stages: row.stages ? JSON.parse(row.stages) : null,
   }
+}
+
+// Reseta etapas não-finalizadas (failed/running) para pending, preservando as `done`.
+// Usado no retry (resume) e no requeue após crash — o pipeline retoma na 1ª etapa não-done.
+function flipUnfinished(stages) {
+  if (!Array.isArray(stages)) return stages ?? null
+  return stages.map((s) =>
+    s.status === 'failed' || s.status === 'running'
+      ? { ...s, status: 'pending', error: undefined, startedAt: undefined, finishedAt: undefined, subs: undefined }
+      : s,
+  )
 }
 
 export function listJobs() {
@@ -39,9 +51,11 @@ export function createJob({ source_path, name, category_id = null, options = {} 
 
 const COLUMNS = new Set([
   'source_path', 'name', 'category_id', 'status', 'stage', 'progress',
-  'position', 'options', 'error', 'nzb_path', 'nfo_path', 'result',
+  'position', 'options', 'error', 'nzb_path', 'nfo_path', 'result', 'stages',
   'started_at', 'finished_at',
 ])
+
+const JSON_COLUMNS = new Set(['options', 'result', 'stages'])
 
 export function updateJob(id, fields, { silent = false } = {}) {
   const sets = []
@@ -49,7 +63,7 @@ export function updateJob(id, fields, { silent = false } = {}) {
   for (const [k, v] of Object.entries(fields)) {
     if (!COLUMNS.has(k)) continue
     sets.push(`${k} = ?`)
-    vals.push(k === 'options' || k === 'result' ? JSON.stringify(v) : v)
+    vals.push(JSON_COLUMNS.has(k) ? JSON.stringify(v ?? null) : v)
   }
   if (sets.length === 0) return getJob(id)
   sets.push('updated_at = ?')
@@ -87,15 +101,27 @@ export function reorderJobs(orderedIds) {
   return listJobs()
 }
 
+// Retry com RESUME: volta para a fila preservando as etapas já `done` (o pipeline
+// retoma na 1ª etapa não-finalizada, reaproveitando NFO/par2/NZB). Não mexe nos artefatos.
 export function retryJob(id) {
+  const job = getJob(id)
   return updateJob(id, {
-    status: 'queued', stage: null, progress: 0, error: null,
-    started_at: null, finished_at: null,
+    status: 'queued', error: null, finished_at: null,
+    stages: flipUnfinished(job?.stages),
   })
 }
 
-// Na inicialização: jobs que estavam 'running' quando o processo morreu
-// voltam para a fila para reprocessar do começo.
+// Retry do ZERO ("reiniciar"): descarta etapas e artefatos para reprocessar tudo.
+export function resetJob(id) {
+  return updateJob(id, {
+    status: 'queued', stage: null, progress: 0, error: null,
+    started_at: null, finished_at: null,
+    stages: null, nzb_path: null, nfo_path: null, result: null,
+  })
+}
+
+// Na inicialização: jobs que estavam 'running' quando o processo morreu voltam para a fila.
+// Preservam etapas `done` (resume após crash); só as não-finalizadas voltam para pending.
 export function requeueInterrupted() {
   const running = db.prepare("SELECT id FROM jobs WHERE status = 'running'").all()
   const tx = db.transaction(() => {
@@ -104,5 +130,11 @@ export function requeueInterrupted() {
     ).run(now())
   })
   tx()
+  for (const { id } of running) {
+    const job = getJob(id)
+    if (Array.isArray(job?.stages)) {
+      updateJob(id, { stages: flipUnfinished(job.stages) }, { silent: true })
+    }
+  }
   return running.map((r) => r.id)
 }
